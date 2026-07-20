@@ -67,6 +67,21 @@ export default function LandingPage({ onEnterCRM, googleScriptUrl, onLeadAdded, 
       title: 'שירות בפריסה ארצית רחבה',
       subtitle: 'מענה מושלם להובלות דירה יוקרתיות ולוגיסטיקה עסקית מורכבת.'
     }
+        {
+      image: truckImg,
+      title: "צי משאיות מתקדם בפריסה ארצית",
+      description: "שינוע מהיר ובטוח לכל חלקי הארץ עם משאיות חדישות המותאמות לכל נפח מטען"
+    },
+    {
+      image: techImg,
+      title: "טכנולוגיית מעקב ואבטחה במעגל סגור",
+      description: "שקיפות מלאה מול הלקוח עם מערכת ניתוח קושי AI וסנכרון ישיר ל-WhatsApp"
+    },
+    {
+      image: teamImg,
+      title: "צוות מובילים וסבלים מורשים",
+      description: "הקפדה יתרה על שלמות התכולה, עמידה קפדנית בזמנים וטיפול מקצועי בציוד רגיש"
+    }
   ];
 
   // Auto advance carousel

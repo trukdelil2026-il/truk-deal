@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Users, Truck, Navigation, ArrowRightLeft, Plus, Edit2, Trash2, 
   Search, CheckCircle2, AlertTriangle, Play, RefreshCw, X, Check, Save, UserPlus, 
-  MapPin, ClipboardList, Info, FileText, Download, FileSpreadsheet
+  MapPin, ClipboardList, Info, FileText, Download, FileSpreadsheet, Star, ExternalLink, Send
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { 
@@ -12,6 +12,7 @@ import {
 import { Lead, Shipment, Driver, ActivityLog, SyncStatus } from '../types';
 import StatCards from './StatCards';
 import DriverMap from './DriverMap';
+import LiveRouteMap from './LiveRouteMap';
 import TwoWaySyncPanel from './TwoWaySyncPanel';
 import FleetManagement from './FleetManagement';
 
@@ -40,7 +41,7 @@ const SEED_SHIPMENTS: Shipment[] = [
   { id: 'shp_3', trackingNumber: 'TRK-2026-1044', customerName: 'לוי בניה ופיתוח', origin: 'ירושלים', destination: 'אשדוד', driverId: 'drv_3', driverName: 'אלירן לוי', cargoType: 'יבש', weight: 8, status: 'delivered', updatedAt: '19/07/2026, 16:30:00' }
 ];
 
-type Tab = 'overview' | 'leads' | 'shipments' | 'drivers' | 'sync' | 'tenders' | 'fleet';
+type Tab = 'overview' | 'leads' | 'shipments' | 'drivers' | 'sync' | 'tenders' | 'fleet' | 'reviews';
 
 export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDashboardProps) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -51,6 +52,8 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [tenders, setTenders] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     lastSyncTime: null,
     status: 'idle',
@@ -68,6 +71,9 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
 
   // Selected driver for dispatch control
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
+
+  // Map view mode toggle (leaflet / vector)
+  const [mapViewMode, setMapViewMode] = useState<'leaflet' | 'vector'>('leaflet');
 
   // Modals / Editors trigger
   const [isManualLeadOpen, setIsManualLeadOpen] = useState(false);
@@ -174,6 +180,28 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
       setLogs(fetchedLogs.slice(0, 50)); // Keep last 50
     });
 
+    // Listen for customer reviews
+    const unsubscribeReviews = onSnapshot(collection(db, 'reviews'), (snapshot) => {
+      const fetchedReviews: any[] = [];
+      snapshot.forEach((doc) => {
+        fetchedReviews.push({ id: doc.id, ...doc.data() });
+      });
+      // Sort newest first
+      fetchedReviews.sort((a, b) => b.createdAt?.localeCompare(a.createdAt));
+      setReviews(fetchedReviews);
+    });
+
+    // Listen for automated notifications
+    const unsubscribeNotifications = onSnapshot(collection(db, 'notifications'), (snapshot) => {
+      const fetchedNotifications: any[] = [];
+      snapshot.forEach((doc) => {
+        fetchedNotifications.push({ id: doc.id, ...doc.data() });
+      });
+      // Sort newest first
+      fetchedNotifications.sort((a, b) => b.timestamp?.localeCompare(a.timestamp));
+      setNotifications(fetchedNotifications);
+    });
+
     setDbLoading(false);
 
     return () => {
@@ -182,6 +210,8 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
       unsubscribeDrivers();
       unsubscribeTenders();
       unsubscribeLogs();
+      unsubscribeReviews();
+      unsubscribeNotifications();
     };
   }, [dbLoading]);
 
@@ -338,19 +368,87 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
         batch.set(ref, shipment);
       });
 
+      // Seed Reviews
+      const seedReviews = [
+        {
+          customerName: 'יונתן כץ',
+          phone: '054-1234567',
+          trackingNumber: 'TRK-2026-1044',
+          rating: 5,
+          comment: 'הובלת הדירה עברה בצורה חלקה ומקצועית ביותר. הנהג אלירן הגיע בזמן ושמר על הרהיטים היטב.',
+          createdAt: new Date().toLocaleString('he-IL'),
+          status: 'google_review',
+          notes: ''
+        },
+        {
+          customerName: 'לירון כהן',
+          phone: '052-7654321',
+          trackingNumber: 'TRK-2026-1043',
+          rating: 5,
+          comment: 'שירות יוצא מן הכלל! המערכת הדיגיטלית לחישוב עלויות ומעקב ה-GPS עובדת מדהים.',
+          createdAt: new Date().toLocaleString('he-IL'),
+          status: 'google_review',
+          notes: ''
+        },
+        {
+          customerName: 'רועי לוי',
+          phone: '050-9999999',
+          trackingNumber: 'TRK-2026-1042',
+          rating: 2,
+          comment: 'ההובלה הגיעה בעיכוב של שעה. לפחות הנהג אבי היה נחמד וסבלני.',
+          createdAt: new Date().toLocaleString('he-IL'),
+          status: 'pending_admin',
+          notes: ''
+        }
+      ];
+
+      seedReviews.forEach((review, idx) => {
+        const ref = doc(collection(db, 'reviews'), `rev_seed_${idx}`);
+        batch.set(ref, review);
+      });
+
+      // Seed Notifications
+      const seedNotifications = [
+        {
+          recipient: 'customer',
+          recipientPhone: '054-1234567',
+          type: 'whatsapp',
+          triggerPoint: 'offer_approved',
+          title: 'הצעת מחיר אושרה!',
+          message: 'אישור הצעת מחיר להובלה TRK-2026-1044 התקבל בהצלחה. לחץ למעקב חי ותשלום: https://trukdealil.web.app/portal?trk=TRK-2026-1044',
+          timestamp: new Date().toLocaleString('he-IL'),
+          read: true
+        },
+        {
+          recipient: 'driver',
+          recipientPhone: '053-7777777',
+          type: 'sms',
+          triggerPoint: 'driver_departed',
+          title: 'המוביל יצא לדרך',
+          message: 'המוביל אלירן לוי יצא לדרך אל כתובת המוצא. מעקב ה-GPS הופעל בהצלחה.',
+          timestamp: new Date().toLocaleString('he-IL'),
+          read: true
+        }
+      ];
+
+      seedNotifications.forEach((noti, idx) => {
+        const ref = doc(collection(db, 'notifications'), `noti_seed_${idx}`);
+        batch.set(ref, noti);
+      });
+
       // Seed basic logs
       const firstLog: ActivityLog = {
         id: `log_seed_1`,
         timestamp: new Date().toLocaleTimeString('he-IL'),
         category: 'system',
-        message: 'בסיס נתונים לוגיסטי אולחל בהצלחה עם הגדרות סנכרון ראשוניות',
+        message: 'בסיס נתונים לוגיסטי אולחל בהצלחה עם הגדרות סנכרון ראשוניות ומשוב לקוחות',
         user: 'מנהל מערכת'
       };
       const logRef = doc(collection(db, 'activity_logs'), firstLog.id);
       batch.set(logRef, firstLog);
 
       await batch.commit();
-      addSystemLog('system', 'טעינת נתוני דוגמה וסימולציה הושלמה בהצלחה');
+      addSystemLog('system', 'טעינת נתוני דוגמה וסימולציה כולל משובים אוטומטיים הושלמה בהצלחה');
     } catch (err) {
       console.error('Error seeding database:', err);
     }
@@ -740,6 +838,23 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
               <ArrowRightLeft className="w-4.5 h-4.5" />
               <span>סנכרון Google Sheets</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('reviews')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded text-xs font-bold transition-all ${
+                activeTab === 'reviews'
+                  ? 'bg-white/5 border-r-4 border-[#ff7f00] text-[#ff7f00]'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Star className="w-4.5 h-4.5 text-amber-400" />
+              <span>פידבק ומשוב לקוחות</span>
+              {reviews.filter(r => r.status === 'pending_admin').length > 0 && (
+                <span className="mr-auto font-mono text-[10px] bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded font-bold animate-pulse">
+                  {reviews.filter(r => r.status === 'pending_admin').length} משבר
+                </span>
+              )}
+            </button>
           </nav>
         </div>
 
@@ -768,6 +883,7 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
               {activeTab === 'fleet' && 'ניהול צי רכבים, משאיות ומשאבים'}
               {activeTab === 'tenders' && 'מכרזי הובלת דירות ומשרדים'}
               {activeTab === 'sync' && 'הגדרות סנכרון וניהול Webhook'}
+              {activeTab === 'reviews' && 'מנוע משוב לקוחות והתראות אוטומטיות (NPS)'}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">שלום, אופרטור מורשה • זמן מקומי נוכחי מסונכרן</p>
           </div>
@@ -788,8 +904,37 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
           <div className="space-y-6">
             <StatCards leads={leads} shipments={shipments} drivers={drivers} />
             <div className="border border-slate-800 rounded-2xl overflow-hidden p-6 bg-[#0e1e38]">
-              <h3 className="font-bold text-slate-200 text-sm mb-4">מיקום לוויני בזמן אמת של צי הרכב</h3>
-              <DriverMap drivers={drivers} onSelectDriver={setSelectedDriver} selectedDriver={selectedDriver} />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 text-right" dir="rtl">
+                <h3 className="font-bold text-slate-200 text-sm">מיקום לוויני וניהול נתיבים בזמן אמת</h3>
+                <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800 self-start sm:self-auto">
+                  <button
+                    onClick={() => setMapViewMode('leaflet')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                      mapViewMode === 'leaflet'
+                        ? 'bg-[#ff7f00] text-[#0a192f]'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    מפת לווין חיה (Leaflet)
+                  </button>
+                  <button
+                    onClick={() => setMapViewMode('vector')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                      mapViewMode === 'vector'
+                        ? 'bg-[#ff7f00] text-[#0a192f]'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    מפה וקטורית ארצית
+                  </button>
+                </div>
+              </div>
+              
+              {mapViewMode === 'leaflet' ? (
+                <LiveRouteMap shipments={shipments} drivers={drivers} />
+              ) : (
+                <DriverMap drivers={drivers} onSelectDriver={setSelectedDriver} selectedDriver={selectedDriver} />
+              )}
             </div>
           </div>
         )}
@@ -1145,11 +1290,40 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
         {activeTab === 'drivers' && (
           <div className="space-y-4">
             <div className="bg-[#0e1e38] border border-slate-800 rounded-2xl p-6 shadow-xl">
-              <div className="mb-4">
-                <h3 className="font-bold text-slate-200 text-sm">מרכז שיגור ופריסת צי משאיות (GPS)</h3>
-                <p className="text-xs text-slate-400 mt-1">מפה וקטורית ארצית המציגה את מיקומי הנהגים, משימות בתנועה ופרטי רישיונות</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 text-right" dir="rtl">
+                <div>
+                  <h3 className="font-bold text-slate-200 text-sm">מרכז שיגור ופריסת צי משאיות (GPS)</h3>
+                  <p className="text-xs text-slate-400 mt-1">מפה וקטורית או לוויינית המציגה את מיקומי הנהגים, משימות בתנועה ופרטי רישיונות בזמן אמת</p>
+                </div>
+                <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800 self-start sm:self-auto shrink-0">
+                  <button
+                    onClick={() => setMapViewMode('leaflet')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                      mapViewMode === 'leaflet'
+                        ? 'bg-[#ff7f00] text-[#0a192f]'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    מפת לווין חיה (Leaflet)
+                  </button>
+                  <button
+                    onClick={() => setMapViewMode('vector')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                      mapViewMode === 'vector'
+                        ? 'bg-[#ff7f00] text-[#0a192f]'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    מפה וקטורית ארצית
+                  </button>
+                </div>
               </div>
-              <DriverMap drivers={drivers} onSelectDriver={setSelectedDriver} selectedDriver={selectedDriver} />
+              
+              {mapViewMode === 'leaflet' ? (
+                <LiveRouteMap shipments={shipments} drivers={drivers} />
+              ) : (
+                <DriverMap drivers={drivers} onSelectDriver={setSelectedDriver} selectedDriver={selectedDriver} />
+              )}
             </div>
           </div>
         )}
@@ -1331,6 +1505,316 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB 8: REVIEWS & NOTIFICATIONS ENGINE */}
+        {activeTab === 'reviews' && (
+          <div className="space-y-6">
+            
+            {/* 1. KEY PERFORMANCE METRICS */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              
+              <div className="bg-[#0e1e38] border border-slate-800 p-5 rounded-2xl text-right relative overflow-hidden">
+                <span className="text-xs font-bold text-slate-400 block uppercase">סה"כ חוות דעת</span>
+                <strong className="text-3xl font-black text-white font-mono block mt-1">{reviews.length}</strong>
+                <div className="text-[10px] text-emerald-400 font-semibold mt-1 flex items-center gap-1">
+                  <span>● מעקב בזמן אמת פעיל</span>
+                </div>
+              </div>
+
+              <div className="bg-[#0e1e38] border border-slate-800 p-5 rounded-2xl text-right relative overflow-hidden">
+                <span className="text-xs font-bold text-slate-400 block uppercase">ממוצע דירוג</span>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <strong className="text-3xl font-black text-[#ff7f00] font-mono">
+                    {(reviews.reduce((acc, r) => acc + r.rating, 0) / (reviews.length || 1)).toFixed(1)}
+                  </strong>
+                  <div className="flex text-[#ff7f00]">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star key={s} className="w-4 h-4 fill-[#ff7f00] stroke-[#ff7f00]" />
+                    ))}
+                  </div>
+                </div>
+                <span className="text-[10px] text-slate-500 block mt-1">מתוך 5.0 כוכבים פוטנציאליים</span>
+              </div>
+
+              <div className="bg-[#0e1e38] border border-slate-800 p-5 rounded-2xl text-right relative overflow-hidden">
+                <span className="text-xs font-bold text-slate-400 block uppercase">מקדמי מותג (Promoters)</span>
+                <strong className="text-3xl font-black text-emerald-400 font-mono block mt-1">
+                  {reviews.filter(r => r.rating >= 4).length}
+                </strong>
+                <span className="text-[10px] text-slate-400 block mt-1">
+                  {((reviews.filter(r => r.rating >= 4).length / (reviews.length || 1)) * 100).toFixed(0)}% מסך כל המשיבים (4-5 כוכבים)
+                </span>
+              </div>
+
+              <div className="bg-[#0e1e38] border border-slate-800 p-5 rounded-2xl text-right relative overflow-hidden">
+                <span className="text-xs font-bold text-slate-400 block uppercase">מקרי משבר פתוחים (Detractors)</span>
+                <strong className="text-3xl font-black text-rose-500 font-mono block mt-1">
+                  {reviews.filter(r => r.rating < 4 && r.status === 'pending_admin').length}
+                </strong>
+                <span className="text-[10px] text-rose-400 block mt-1 font-semibold animate-pulse">
+                  דרוש טיפול מיידי (1-3 כוכבים)
+                </span>
+              </div>
+
+            </div>
+
+            {/* 2. MAIN SPLIT GRID: REVIEWS ON RIGHT, NOTIFICATIONS ON LEFT */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* REVIEWS MAIN CONTROL FEED (COL 8) */}
+              <div className="lg:col-span-8 space-y-4">
+                <div className="bg-[#0e1e38] border border-slate-800 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-850">
+                    <div>
+                      <h3 className="font-extrabold text-sm text-white">מאגר חוות דעת לקוחות</h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">מיון כרונולוגי של הדירוגים שנשלחו ישירות מה-PWA</p>
+                    </div>
+                  </div>
+
+                  {reviews.length === 0 ? (
+                    <div className="py-12 text-center text-slate-500 space-y-2">
+                      <Star className="w-10 h-10 text-slate-700 mx-auto" />
+                      <p className="text-xs">אין חוות דעת מוקלטות כרגע במערכת</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+                      {reviews.map((review: any) => {
+                        const isCrisis = review.rating < 4;
+                        const isResolved = review.status === 'resolved';
+
+                        return (
+                          <div 
+                            key={review.id} 
+                            className={`border rounded-xl p-4 transition-all ${
+                              isCrisis 
+                                ? isResolved 
+                                  ? 'bg-slate-900/50 border-slate-800 text-slate-400' 
+                                  : 'bg-rose-500/5 border-rose-500/20 text-slate-200'
+                                : 'bg-[#061121]/40 border-slate-850 text-slate-200'
+                            }`}
+                          >
+                            {/* Top header line of review card */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-800/60 mb-2.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-extrabold text-xs text-white">{review.customerName}</span>
+                                <span className="text-[10px] text-slate-400 font-mono" dir="ltr">{review.phone}</span>
+                                {review.trackingNumber && (
+                                  <span className="text-[9px] bg-slate-800 text-[#ff7f00] px-1.5 py-0.5 rounded font-mono font-bold">
+                                    {review.trackingNumber}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <div className="flex text-[#ff7f00] shrink-0">
+                                  {Array.from({ length: 5 }).map((_, i) => (
+                                    <Star 
+                                      key={i} 
+                                      className={`w-3.5 h-3.5 ${
+                                        i < review.rating ? 'fill-[#ff7f00] text-[#ff7f00]' : 'text-slate-600'
+                                      }`} 
+                                    />
+                                  ))}
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-bold">{review.createdAt}</span>
+                              </div>
+                            </div>
+
+                            {/* Comment */}
+                            <p className="text-xs leading-relaxed text-slate-300">
+                              {review.comment || <em className="text-slate-500">ללא פירוט מילולי</em>}
+                            </p>
+
+                            {/* Smart routing Badge */}
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-850/60">
+                              <div>
+                                {review.rating >= 4 ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/15">
+                                    <span>הופנה לגוגל ביקורות גלובליות</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </span>
+                                ) : isResolved ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">
+                                    <span>משבר טופל ונסגר ע"י אופרטור</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black bg-rose-500/10 text-rose-400 px-2 py-0.5 rounded border border-rose-500/20 animate-pulse">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    <span>התראת משבר פעילה - דרוש מענה טלפוני</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Admin Action Control for Low Rating Crisis */}
+                              {!isResolved && review.rating < 4 && (
+                                <div className="flex items-center gap-2 w-full sm:w-auto">
+                                  <input 
+                                    type="text" 
+                                    id={`note_${review.id}`}
+                                    placeholder="הוסף סיכום טיפול פנימי..."
+                                    className="bg-black/30 border border-slate-850 text-slate-200 placeholder-slate-600 rounded px-2 py-1 text-[10px] focus:outline-none focus:border-[#ff7f00] flex-1 sm:w-48"
+                                  />
+                                  <button
+                                    onClick={async () => {
+                                      const inputEl = document.getElementById(`note_${review.id}`) as HTMLInputElement;
+                                      const adminNotes = inputEl?.value.trim() || 'טופל בהצלחה מול הלקוח';
+                                      try {
+                                        await updateDoc(doc(db, 'reviews', review.id), {
+                                          status: 'resolved',
+                                          notes: adminNotes
+                                        });
+                                        addSystemLog('system', `טיפול במשבר הושלם בהצלחה עבור ${review.customerName}. סיכום: "${adminNotes}"`);
+                                      } catch (err) {
+                                        console.error('Error resolving review:', err);
+                                      }
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] px-3 py-1 rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                                  >
+                                    סמן כפתור וסגור טיפול
+                                  </button>
+                                </div>
+                              )}
+
+                              {review.notes && (
+                                <div className="w-full bg-slate-900/40 p-2 rounded border border-slate-850 mt-1.5 text-[11px] text-slate-400">
+                                  <strong className="text-slate-300">הערת טיפול מנהל: </strong>
+                                  <span>{review.notes}</span>
+                                </div>
+                              )}
+                            </div>
+
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* AUTOMATED NOTIFICATIONS ENGINE LOGS (COL 4) */}
+              <div className="lg:col-span-4 space-y-4">
+                
+                {/* Simulated triggers dispatch */}
+                <div className="bg-[#0e1e38] border border-slate-800 rounded-2xl p-5 space-y-4">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-white">סימולטור התראות אוטומטיות</h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">מדמה שליחת SMS / WhatsApp בצמתים קריטיים</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await addDoc(collection(db, 'notifications'), {
+                            recipient: 'customer',
+                            recipientPhone: '054-9876543',
+                            type: 'whatsapp',
+                            triggerPoint: 'offer_approved',
+                            title: 'הצעת מחיר אושרה בהצלחה 📦',
+                            message: 'תודה רבה על אישור הצעת המחיר! הנהג שלך שובץ בהצלחה. קישור למעקב חי והסדרת תשלום מאובטח: https://trukdealil.web.app/portal?trk=TRK-2026-1044',
+                            timestamp: new Date().toLocaleString('he-IL'),
+                            read: false
+                          });
+                          addSystemLog('system', 'סימולציה: נשלחה הודעת אישור הצעת מחיר ב-WhatsApp ללקוח');
+                          alert('התראה אוטומטית סומלצה ונרשמה בבסיס הנתונים!');
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      className="w-full bg-[#25D366]/10 hover:bg-[#25D366]/20 border border-[#25D366]/30 text-[#25D366] font-bold text-[11px] py-2.5 rounded-xl transition-all text-right pr-3 flex items-center justify-between cursor-pointer"
+                    >
+                      <span>שגר התראת אישור הצעת מחיר ללקוח</span>
+                      <Plus className="w-4 h-4 ml-2 text-[#25D366]" />
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        try {
+                          await addDoc(collection(db, 'notifications'), {
+                            recipient: 'customer',
+                            recipientPhone: '054-9876543',
+                            type: 'sms',
+                            triggerPoint: 'driver_departed',
+                            title: 'הנהג בדרך אליך! 🚛',
+                            message: 'המוביל אבי מזרחי החל בנסיעה אל כתובת המוצא שלך. מעקב מיקום ה-GPS החי הופעל! פתח מפה: https://trukdealil.web.app/portal?trk=TRK-2026-1044',
+                            timestamp: new Date().toLocaleString('he-IL'),
+                            read: false
+                          });
+                          addSystemLog('system', 'סימולציה: נשלחה הודעת "נהג בדרך אליך" ב-SMS ללקוח');
+                          alert('התראה אוטומטית סומלצה ונרשמה בבסיס הנתונים!');
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      className="w-full bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 font-bold text-[11px] py-2.5 rounded-xl transition-all text-right pr-3 flex items-center justify-between cursor-pointer"
+                    >
+                      <span>שגר הודעת יציאת נהג לדרך</span>
+                      <Send className="w-4 h-4 ml-2 text-sky-400" />
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        try {
+                          await addDoc(collection(db, 'notifications'), {
+                            recipient: 'customer',
+                            recipientPhone: '054-9876543',
+                            type: 'whatsapp',
+                            triggerPoint: 'invoice_delivered',
+                            title: 'חשבונית מס דיגיטלית הופקה 🧾',
+                            message: 'ההובלה הסתיימה בהצלחה! חשבונית מס וקבלה דיגיטלית מקורית הופקו ונשלחו לאימייל. לצפייה: https://trukdealil.web.app/portal?trk=TRK-2026-1044',
+                            timestamp: new Date().toLocaleString('he-IL'),
+                            read: false
+                          });
+                          addSystemLog('system', 'סימולציה: נשלחה חשבונית דיגיטלית ב-WhatsApp ללקוח');
+                          alert('התראה אוטומטית סומלצה ונרשמה בבסיס הנתונים!');
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      className="w-full bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 font-bold text-[11px] py-2.5 rounded-xl transition-all text-right pr-3 flex items-center justify-between cursor-pointer"
+                    >
+                      <span>שגר הודעת סיום הובלה וחשבונית</span>
+                      <FileText className="w-4 h-4 ml-2 text-orange-400" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Notifications Dispatch logs */}
+                <div className="bg-[#0e1e38] border border-slate-800 rounded-2xl p-5 space-y-3">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-white">יומן התראות שסופקו בפועל</h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">תיעוד היסטורי של ספקי התראות ו-Webhooks</p>
+                  </div>
+
+                  {notifications.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 text-center py-4">אין הודעות מוקלטות</p>
+                  ) : (
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                      {notifications.map((noti: any) => (
+                        <div key={noti.id} className="bg-black/20 p-2.5 rounded-lg border border-slate-850 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-[#ff7f00]">{noti.title}</span>
+                            <span className="text-[8px] text-slate-500 font-mono">{noti.timestamp}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-300 leading-relaxed font-mono">{noti.message}</p>
+                          <div className="flex items-center justify-between text-[8px] text-slate-400 pt-1">
+                            <span>אל: <strong className="font-mono">{noti.recipientPhone}</strong></span>
+                            <span className={`px-1 rounded ${noti.type === 'whatsapp' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-sky-500/10 text-sky-400'}`}>
+                              {noti.type.toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+            </div>
+
           </div>
         )}
 

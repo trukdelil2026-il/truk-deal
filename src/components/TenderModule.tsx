@@ -4,7 +4,7 @@ import {
   ArrowRight, Upload, X, Check, AlertCircle, FileText, 
   MapPin, Calendar, Truck, User, Phone, ShieldCheck, HelpCircle,
   Star, CheckCircle2, Sparkles, Smartphone, Layers, Compass, DollarSign,
-  Clock, ArrowLeft, Info, RefreshCw
+  Clock, ArrowLeft, Info, RefreshCw, Camera, Video, Cpu
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
@@ -12,9 +12,10 @@ import { collection, addDoc } from 'firebase/firestore';
 interface TenderModuleProps {
   onBackToLanding: () => void;
   googleScriptUrl: string;
+  onEnterClientPortal?: () => void;
 }
 
-export default function TenderModule({ onBackToLanding, googleScriptUrl }: TenderModuleProps) {
+export default function TenderModule({ onBackToLanding, googleScriptUrl, onEnterClientPortal }: TenderModuleProps) {
   // PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState(false);
@@ -58,6 +59,93 @@ export default function TenderModule({ onBackToLanding, googleScriptUrl }: Tende
   const [simulatedOffers, setSimulatedOffers] = useState<any[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI Surveyor & Volume Estimator state variables
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState('');
+  const [aiSurveyResult, setAiSurveyResult] = useState<{
+    detectedItems: string[];
+    estimatedVolume: number;
+    estimatedCartons: number;
+    needCrane: boolean;
+    hasLivingRoom: boolean;
+    hasFridge: boolean;
+    hasWashingMachine: boolean;
+    summaryHebrew: string;
+  } | null>(null);
+  const [surveyError, setSurveyError] = useState<string | null>(null);
+
+  const runAISurvey = async () => {
+    if (images.length === 0) {
+      setSurveyError('נא להעלות לפחות תמונה אחת או סרטון לסריקת ה-AI');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setSurveyError(null);
+    setAiSurveyResult(null);
+
+    const steps = [
+      'קורא את קבצי המדיה שהעלית...',
+      'מעלה ומכין תמונות לעיבוד...',
+      'מתחבר למנוע הראייה הממוחשבת של Gemini 3.5-Flash...',
+      'סורק רהיטים, מכשירי חשמל וזיהוי חפצים...',
+      'מנתח עומסים ומחשב נפח כולל בקוב...',
+      'קובע התאמה למשאית וצורך במנוף...',
+      'מייצר המלצות ודגשים למעבר...'
+    ];
+
+    let stepIndex = 0;
+    setAnalysisStep(steps[0]);
+    const interval = setInterval(() => {
+      if (stepIndex < steps.length - 1) {
+        stepIndex++;
+        setAnalysisStep(steps[stepIndex]);
+      }
+    }, 1200);
+
+    try {
+      const base64Images = images.map(img => img.base64);
+
+      const response = await fetch('/api/ai/survey', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ images: base64Images })
+      });
+
+      clearInterval(interval);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'חלה שגיאה בעיבוד הניתוח החזותי בשרת');
+      }
+
+      const result = await response.json();
+      setAiSurveyResult(result);
+    } catch (err: any) {
+      clearInterval(interval);
+      console.error(err);
+      setSurveyError(err.message || 'חלה שגיאה לא צפויה בתהליך הניתוח החזותי.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const applyAISurveyData = () => {
+    if (!aiSurveyResult) return;
+    
+    setFormData((prev) => ({
+      ...prev,
+      cartonsCount: aiSurveyResult.estimatedCartons || prev.cartonsCount,
+      needCrane: aiSurveyResult.needCrane ? 'yes' : 'no',
+      hasLivingRoom: aiSurveyResult.hasLivingRoom,
+      hasFridge: aiSurveyResult.hasFridge,
+      hasWashingMachine: aiSurveyResult.hasWashingMachine,
+      additionalNotes: `[סריקה חזותית מבוססת AI ⚡: זוהו הפריטים: ${aiSurveyResult.detectedItems?.join(', ')}. נפח כולל: ${aiSurveyResult.estimatedVolume} קוב. ${aiSurveyResult.summaryHebrew}]\n\n${prev.additionalNotes}`
+    }));
+  };
 
   // Listen to PWA installable prompt
   useEffect(() => {
@@ -709,6 +797,223 @@ export default function TenderModule({ onBackToLanding, googleScriptUrl }: Tende
                       צעד 3: תכולת הדירה ותמונות
                     </h3>
 
+                    {/* סורק תכולה חזותי מבוסס AI - AI VISUAL SURVEYOR */}
+                    <div className="bg-gradient-to-br from-[#0a192f] to-[#0d213e] border-2 border-[#ff7f00]/30 rounded-2xl p-5 relative overflow-hidden space-y-4">
+                      {/* Decorative glowing lines */}
+                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#ff7f00] via-[#e06f00] to-cyan-400"></div>
+                      
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-right">
+                          <div className="w-8 h-8 rounded-lg bg-[#ff7f00]/10 flex items-center justify-center text-[#ff7f00] shrink-0">
+                            <Cpu className="w-5 h-5 animate-pulse" />
+                          </div>
+                          <div>
+                            <h4 className="text-white font-extrabold text-sm flex items-center gap-1.5 flex-wrap">
+                              סורק תכולה חזותי חכם • AI Vision
+                              <span className="text-[9px] bg-cyan-500/15 text-cyan-400 px-1.5 py-0.5 rounded font-black">Powered by Gemini</span>
+                            </h4>
+                            <p className="text-[10px] text-slate-400">צלמו או העלו סיור חזותי קצר, וה-AI יעריך עבורכם את נפח התכולה במדויק</p>
+                          </div>
+                        </div>
+                        <Sparkles className="w-4 h-4 text-[#ff7f00] shrink-0" />
+                      </div>
+
+                      {/* Photo / Video upload triggers */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cameraInput = document.getElementById('ai-camera-capture') as HTMLInputElement;
+                            if (cameraInput) cameraInput.click();
+                          }}
+                          className="bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-[#ff7f00]/40 p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all text-center group cursor-pointer"
+                        >
+                          <Camera className="w-5 h-5 text-[#ff7f00] group-hover:scale-110 transition-transform" />
+                          <span className="text-xs font-bold text-slate-200">צילום ישיר מהמצלמה 📸</span>
+                          <span className="text-[9px] text-slate-500">עבור משתמשי מובייל / PWA</span>
+                        </button>
+                        <input
+                          id="ai-camera-capture"
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(e) => {
+                            if (e.target.files) processFiles(e.target.files);
+                          }}
+                          className="hidden"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const videoInput = document.getElementById('ai-video-capture') as HTMLInputElement;
+                            if (videoInput) videoInput.click();
+                          }}
+                          className="bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-[#ff7f00]/40 p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all text-center group cursor-pointer"
+                        >
+                          <Video className="w-5 h-5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                          <span className="text-xs font-bold text-slate-200">צילום סיור וידאו קצר 🎥</span>
+                          <span className="text-[9px] text-slate-500">העלאת קובץ וידאו או הקלטה חיה</span>
+                        </button>
+                        <input
+                          id="ai-video-capture"
+                          type="file"
+                          accept="video/*"
+                          onChange={async (e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              const file = e.target.files[0];
+                              setError(null);
+                              setSurveyError(null);
+                              const preview = URL.createObjectURL(file);
+                              // Add file with representation block
+                              setImages(prev => [...prev, { file, base64: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", preview }]);
+                            }
+                          }}
+                          className="hidden"
+                        />
+                      </div>
+
+                      {/* Display warnings or list of media */}
+                      {images.length > 0 && (
+                        <div className="bg-[#061121] border border-slate-800 p-3 rounded-xl space-y-3 text-right">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400 font-bold">מדיה טעונה לסריקה ({images.length} פריטים):</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setImages([]);
+                                setAiSurveyResult(null);
+                              }}
+                              className="text-[9px] text-rose-400 hover:underline cursor-pointer"
+                            >
+                              נקה הכל
+                            </button>
+                          </div>
+
+                          {/* Image preview strip with laser scanning beam if isAnalyzing */}
+                          <div className="relative flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin">
+                            {images.map((img, index) => (
+                              <div key={index} className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-800 shrink-0 bg-slate-900">
+                                <img src={img.preview} alt="Room" className="w-full h-full object-cover" />
+                                {isAnalyzing && (
+                                  <>
+                                    <div className="absolute inset-0 scanner-overlay z-10 pointer-events-none"></div>
+                                    <div className="absolute left-0 w-full h-0.5 bg-[#ff7f00] shadow-[0_0_8px_#ff7f00] z-20 animate-laser pointer-events-none"></div>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Trigger analysis button */}
+                          {!isAnalyzing && !aiSurveyResult && (
+                            <button
+                              type="button"
+                              onClick={runAISurvey}
+                              className="w-full bg-[#ff7f00] hover:bg-[#e06f00] text-[#0a192f] font-black text-xs py-2.5 rounded-xl transition-all shadow-md shadow-[#ff7f00]/10 flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Sparkles className="w-4 h-4" />
+                              נתח תכולה והערך נפח בקליק ✨
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Processing / Scan status */}
+                      {isAnalyzing && (
+                        <div className="bg-[#061121] border border-[#ff7f00]/20 p-4 rounded-xl text-center space-y-3">
+                          <div className="relative w-12 h-12 mx-auto">
+                            <div className="absolute inset-0 rounded-full border-2 border-[#ff7f00]/20 border-t-[#ff7f00] animate-spin"></div>
+                            <Cpu className="w-5 h-5 text-[#ff7f00] absolute inset-0 m-auto animate-pulse" />
+                          </div>
+                          <div className="space-y-1">
+                            <span className="text-xs font-black text-white block">סורק ומנתח תכולה בזמן אמת...</span>
+                            <span className="text-[10px] text-[#ff7f00] font-mono block animate-pulse" dir="rtl">{analysisStep}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Survey Errors */}
+                      {surveyError && (
+                        <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl text-[11px] text-rose-400 font-bold flex items-center gap-1.5 text-right" dir="rtl">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{surveyError}</span>
+                        </div>
+                      )}
+
+                      {/* SMART VOLUME CARD - כרטיס נפח חכם */}
+                      {aiSurveyResult && (
+                        <div className="bg-[#061121] border-2 border-cyan-500/30 p-4 rounded-xl space-y-3.5 relative overflow-hidden bg-gradient-to-r from-[#061121] to-[#09223e] text-right" dir="rtl">
+                          <div className="absolute -top-10 -left-10 w-24 h-24 bg-cyan-400/10 rounded-full blur-xl pointer-events-none"></div>
+
+                          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                            <div className="flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                              <strong className="text-xs font-black text-white">כרטיס נפח חכם (AI Vision Survey)</strong>
+                            </div>
+                            <span className="text-[9px] bg-emerald-500/15 text-emerald-400 font-extrabold px-1.5 py-0.5 rounded-full">סריקה הושלמה</span>
+                          </div>
+
+                          {/* Major metrics */}
+                          <div className="grid grid-cols-3 gap-2.5">
+                            <div className="bg-[#0e1e38] border border-slate-800 p-2.5 rounded-xl text-center space-y-0.5">
+                              <span className="text-[9px] text-slate-400 block font-bold">נפח תכולה (קוב)</span>
+                              <div className="text-sm sm:text-base font-black text-cyan-400 flex items-center justify-center gap-0.5">
+                                <span>{aiSurveyResult.estimatedVolume}</span>
+                                <span className="text-[10px] text-slate-400">מ"ק</span>
+                              </div>
+                            </div>
+                            <div className="bg-[#0e1e38] border border-slate-800 p-2.5 rounded-xl text-center space-y-0.5">
+                              <span className="text-[9px] text-slate-400 block font-bold">קרטונים מומלצים</span>
+                              <span className="text-sm sm:text-base font-black text-[#ff7f00] block">{aiSurveyResult.estimatedCartons}</span>
+                            </div>
+                            <div className="bg-[#0e1e38] border border-slate-800 p-2.5 rounded-xl text-center space-y-0.5 flex flex-col justify-center">
+                              <span className="text-[9px] text-slate-400 block font-bold">צורך במנוף חיצוני</span>
+                              <span className={`text-[10px] sm:text-[11px] font-black block mt-0.5 ${aiSurveyResult.needCrane ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                {aiSurveyResult.needCrane ? 'כן, נדרש 🏗️' : 'לא נדרש'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Detected items pills */}
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-400 font-bold block">פריטים וציוד שזוהו בסריקה חזותית:</span>
+                            <div className="flex flex-wrap gap-1 justify-start">
+                              {aiSurveyResult.detectedItems && aiSurveyResult.detectedItems.length > 0 ? (
+                                aiSurveyResult.detectedItems.map((item, i) => (
+                                  <span key={i} className="text-[10px] bg-[#0e1e38] border border-slate-800 text-slate-200 px-2 py-0.5 rounded-md font-bold">
+                                    {item}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[10px] text-slate-500">לא זוהו פריטים כבדים חריגים.</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* AI Narrative recommendations */}
+                          {aiSurveyResult.summaryHebrew && (
+                            <div className="bg-cyan-500/5 border border-cyan-500/10 p-3 rounded-xl">
+                              <p className="text-[11px] text-slate-300 leading-relaxed font-medium">
+                                💡 <span className="text-cyan-400 font-bold">ניתוח המערכת:</span> {aiSurveyResult.summaryHebrew}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Apply / Auto-Fill Trigger */}
+                          <button
+                            type="button"
+                            onClick={applyAISurveyData}
+                            className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-blue-600 hover:to-cyan-500 text-white font-black text-xs py-3 rounded-xl transition-all shadow-md shadow-cyan-500/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Check className="w-4 h-4" />
+                            אשר והזרק נתוני נפח לטופס המכרז 🚀
+                          </button>
+                        </div>
+                      )}
+
+                    </div>
+
                     {/* Content quick checkmarks */}
                     <div className="space-y-2">
                       <label className="text-xs font-black text-slate-300 block">סמנו את הפריטים העיקריים להעברה:</label>
@@ -1047,16 +1352,24 @@ export default function TenderModule({ onBackToLanding, googleScriptUrl }: Tende
               </div>
 
               {/* ACTION BUTTONS */}
-              <div className="flex items-center gap-3 justify-center pt-2">
+              <div className="flex flex-col sm:flex-row items-center gap-3 justify-center pt-2">
+                {onEnterClientPortal && (
+                  <button
+                    onClick={onEnterClientPortal}
+                    className="w-full sm:w-auto bg-[#ff7f00] hover:bg-[#e06f00] text-[#0a192f] font-black text-xs px-6 py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 hover:scale-[1.02]"
+                  >
+                    <span>המשך לפורטל מעקב ותשלום מאובטח 💳</span>
+                  </button>
+                )}
                 <button
                   onClick={resetTenderPortal}
-                  className="bg-white/5 border border-slate-800 hover:bg-slate-800 text-white font-bold text-xs px-6 py-3 rounded-xl transition-all"
+                  className="w-full sm:w-auto bg-white/5 border border-slate-800 hover:bg-slate-800 text-white font-bold text-xs px-6 py-3 rounded-xl transition-all"
                 >
                   הגשת מכרז דירה חדש
                 </button>
                 <button
                   onClick={onBackToLanding}
-                  className="bg-[#ff7f00] hover:bg-[#e06f00] text-[#0a192f] font-black text-xs px-6 py-3 rounded-xl transition-all"
+                  className="w-full sm:w-auto bg-[#0e1e38] border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white font-bold text-xs px-6 py-3 rounded-xl transition-all"
                 >
                   חזרה לדף הבית
                 </button>

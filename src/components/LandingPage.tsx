@@ -12,9 +12,12 @@ interface LandingPageProps {
   googleScriptUrl: string;
   onLeadAdded: () => void;
   onEnterTender: () => void;
+  onEnterClientPortal: () => void;
+  onEnterDriverPortal: () => void;
+  onEnterFeedback: () => void;
 }
 
-export default function LandingPage({ onEnterCRM, googleScriptUrl, onLeadAdded, onEnterTender }: LandingPageProps) {
+export default function LandingPage({ onEnterCRM, googleScriptUrl, onLeadAdded, onEnterTender, onEnterClientPortal, onEnterDriverPortal, onEnterFeedback }: LandingPageProps) {
   // Client type state: 'private' (B2C - הובלת דירה) or 'business' (B2B - לוגיסטיקה עסקית)
   const [clientType, setClientType] = useState<'private' | 'business'>('private');
   
@@ -313,9 +316,29 @@ export default function LandingPage({ onEnterCRM, googleScriptUrl, onLeadAdded, 
               <a href="#about-platform" className="hover:text-[#ff7f00] transition-colors">מי אנחנו</a>
               <a href="#services-grid" className="hover:text-[#ff7f00] transition-colors">סל שירותים</a>
               <a href="#customer-reviews" className="hover:text-[#ff7f00] transition-colors">חוות דעת גוגל</a>
+              <button 
+                onClick={onEnterFeedback} 
+                className="hover:text-[#ff7f00] text-[#ff7f00] transition-colors font-black cursor-pointer bg-amber-500/10 px-2 py-1 rounded"
+              >
+                סקר שביעות רצון ⭐
+              </button>
               <a href="#quote-form-section" className="hover:text-[#ff7f00] transition-colors">הצעת מחיר דיגיטלית</a>
             </nav>
             
+            <button
+              onClick={onEnterClientPortal}
+              className="bg-[#0e1e38] hover:bg-[#ff7f00]/10 border border-[#ff7f00]/20 hover:border-[#ff7f00]/60 text-slate-200 hover:text-[#ff7f00] font-black text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-md"
+            >
+              <span>מעקב משלוח ופורטל לקוח 📦</span>
+            </button>
+
+            <button
+              onClick={onEnterDriverPortal}
+              className="bg-[#0e1e38] hover:bg-[#ff7f00]/10 border border-[#ff7f00]/20 hover:border-[#ff7f00]/60 text-slate-200 hover:text-[#ff7f00] font-black text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-md"
+            >
+              <span>אפליקציית נהגי שטח 🚛</span>
+            </button>
+
             <button
               onClick={onEnterTender}
               className="bg-[#ff7f00] hover:bg-[#e06f00] text-[#0a192f] font-black text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-md hover:scale-[1.02]"

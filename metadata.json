@@ -1,6 +1,6 @@
 {
   "name": "Truk Deal il",
   "description": "פלטפורמת לוגיסטיקה וניהול מתקדמת הכוללת דף נחיתה ומערכת CRM מלאה",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -4,12 +4,15 @@ import { Lock, LogIn, ChevronLeft, Eye, EyeOff, ShieldCheck, HelpCircle } from '
 import LandingPage from './components/LandingPage';
 import CRMDashboard from './components/CRMDashboard';
 import TenderModule from './components/TenderModule';
+import ClientPortal from './components/ClientPortal';
+import DriverPortal from './components/DriverPortal';
+import PostMoveFeedback from './components/PostMoveFeedback';
 
 // Official Apps Script endpoint supplied by the user
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzfzwyCakn7M5id7RDLxmSw1CqfkEKIewIPdsPJKSDPxEXx2kYs_sDkRnSxbspgF85lOQ/exec";
 
 export default function App() {
-  const [view, setView] = useState<'landing' | 'login' | 'crm' | 'tender'>('landing');
+  const [view, setView] = useState<'landing' | 'login' | 'crm' | 'tender' | 'client-portal' | 'driver-portal' | 'customer-feedback'>('landing');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -64,6 +67,9 @@ export default function App() {
               googleScriptUrl={GOOGLE_SCRIPT_URL}
               onLeadAdded={handleLeadAdded}
               onEnterTender={() => setView('tender')}
+              onEnterClientPortal={() => setView('client-portal')}
+              onEnterDriverPortal={() => setView('driver-portal')}
+              onEnterFeedback={() => setView('customer-feedback')}
             />
           </motion.div>
         )}
@@ -202,6 +208,54 @@ export default function App() {
             <TenderModule 
               onBackToLanding={() => setView('landing')}
               googleScriptUrl={GOOGLE_SCRIPT_URL}
+              onEnterClientPortal={() => setView('client-portal')}
+            />
+          </motion.div>
+        )}
+
+        {/* VIEW 5: CLIENT PERSONAL PWA PORTAL */}
+        {view === 'client-portal' && (
+          <motion.div
+            key="client-portal-view"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          >
+            <ClientPortal 
+              onBackToLanding={() => setView('landing')}
+              googleScriptUrl={GOOGLE_SCRIPT_URL}
+            />
+          </motion.div>
+        )}
+
+        {/* VIEW 6: DRIVER FIELD PWA WORKSPACE */}
+        {view === 'driver-portal' && (
+          <motion.div
+            key="driver-portal-view"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          >
+            <DriverPortal 
+              onBackToLanding={() => setView('landing')}
+              googleScriptUrl={GOOGLE_SCRIPT_URL}
+            />
+          </motion.div>
+        )}
+
+        {/* VIEW 7: POST-MOVE FEEDBACK PAGE */}
+        {view === 'customer-feedback' && (
+          <motion.div
+            key="customer-feedback-view"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          >
+            <PostMoveFeedback 
+              onBackToLanding={() => setView('landing')}
             />
           </motion.div>
         )}

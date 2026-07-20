@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="he" dir="rtl" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Truk Deal il - פלטפורמת לוגיסטיקה ו-CRM מתקדמת</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0a192f" />
+    <link rel="icon" type="image/png" href="https://i.ibb.co/Ldb5GCxF/logo.png" />
+    <link rel="apple-touch-icon" href="https://i.ibb.co/Ldb5GCxF/logo.png" />
+  </head>
+  <body class="bg-[#0a192f] text-slate-100 min-h-screen font-sans antialiased selection:bg-[#ff7f00] selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('ServiceWorker registered', reg))
+            .catch(err => console.log('ServiceWorker registration failed', err));
+        });
+      }
+    </script>
+  </body>
+</html>
+

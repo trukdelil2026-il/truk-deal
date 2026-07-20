@@ -269,3 +269,5 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartMove }) => {
     </div>
   );
 };
+
+export default LandingPage;

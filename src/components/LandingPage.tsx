@@ -4,13 +4,10 @@ import {
   ShieldCheck, 
   Clock, 
   MapPin, 
-  Phone, 
   Star, 
   ArrowLeft, 
   CheckCircle2, 
   Calculator,
-  ChevronRight,
-  ChevronLeft,
   Building2,
   User,
   Sparkles
@@ -22,7 +19,6 @@ interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onStartMove }) => {
   const [activeSlide, setActiveSlide] = useState(0);
-  const [clientType, setClientType] = useState<'b2c' | 'b2b'>('b2c');
 
   const slides = [
     {
@@ -158,22 +154,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartMove }) => {
                 <span>קבל הצעת מחיר מיידית</span>
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              
-              <div className="flex items-center gap-4 px-4 py-2 bg-slate-900/60 backdrop-blur-sm border border-slate-800 rounded-xl">
-                <div className="flex -space-x-2 space-x-reverse">
-                  <div className="w-9 h-9 rounded-full bg-[#ff7f00] text-[#0a192f] font-bold flex items-center justify-center text-xs border-2 border-[#0a192f]">שס</div>
-                  <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs border-2 border-[#0a192f]">עא</div>
-                  <div className="w-9 h-9 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs border-2 border-[#0a192f]">חכ</div>
-                </div>
-                <div>
-                  <div className="flex text-amber-400">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="w-3.5 h-3.5 fill-current" />
-                    ))}
-                  </div>
-                  <p className="text-xs text-slate-400">מעל 1,200 לקוחות מרוצים</p>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -269,3 +249,5 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartMove }) => {
     </div>
   );
 };
+
+export default LandingPage;

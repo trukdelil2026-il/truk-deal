@@ -67,7 +67,7 @@ export default function LandingPage({ onEnterCRM, googleScriptUrl, onLeadAdded, 
       title: 'שירות בפריסה ארצית רחבה',
       subtitle: 'מענה מושלם להובלות דירה יוקרתיות ולוגיסטיקה עסקית מורכבת.'
     }
-
+ 
   ];
 
   // Auto advance carousel

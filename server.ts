@@ -131,6 +131,50 @@ async function startServer() {
     }
   });
 
+  // API endpoint for AI Pricing Optimization & Logistics Advice
+  app.post("/api/ai/pricing-advice", async (req, res) => {
+    try {
+      const { distance, volume, needCrane, isRushHour, trafficLevel, origin, destination } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.json({
+          advice: `[מצב הדגמה - מפתח API לא מוגדר] המלצה לוגיסטית להובלה מ-${origin || "מוצא"} ל-${destination || "יעד"} (${distance} ק"מ, ${volume} קוב): הובלה בנפח כזה דורשת משאית בינונית או כבדה. בשל שעות עומס מומלץ לתכנן יציאה מוקדמת ב-06:00 כדי להימנע מפקקים בכבישים מהירים, ולרתום משאית עם דופן הידראולית לצורך פריקה בטוחה.`
+        });
+      }
+
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const prompt = `אתה יועץ לוגיסטיקה בכיר ואנליסט תמחור של חברת ההובלות היוקרתית Truk Deal IL בישראל.
+נתח את פרטי ההובלה הבאים והפק המלצה אופטימלית קצרה ומקצועית (3-4 שורות) בעברית מלאה:
+- נקודת מוצא: ${origin || "לא מוגדר"}
+- נקודת יעד: ${destination || "לא מוגדר"}
+- מרחק: ${distance} ק"מ
+- נפח תכולה: ${volume} מ"ק (קוב)
+- צורך במנוף: ${needCrane ? "כן" : "לא"}
+- שעות עומס בכבישים: ${isRushHour ? "כן" : "לא"}
+- רמת פקקים צפויה: ${trafficLevel === "high" ? "גבוהה מאוד" : trafficLevel === "medium" ? "בינונית" : "נמוכה"}
+
+הסבר בקצרה על כדאיות ההובלה, איזו משאית מומלצת מתוך הצי (מנוף, הידראולית, או סמיטריילר), והמלצה אופרטיבית קריטית לנסיעה בנתיב זה (לדוגמה מעבר דרך כביש 6 או כביש 2, הימנעות משעות ספציפיות, או היערכות לחניה). ספק את התשובה בעברית רהוטה ויוקרתית.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt
+      });
+
+      return res.json({ advice: response.text });
+    } catch (err: any) {
+      console.error("AI Pricing Advice Error:", err);
+      return res.status(500).json({ error: "שגיאה בהפקת המלצה מה-AI" });
+    }
+  });
+
   // Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "healthy", app: "Truk Deal IL" });

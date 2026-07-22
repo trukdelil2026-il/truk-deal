@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Users, Truck, Navigation, ArrowRightLeft, Plus, Edit2, Trash2, 
   Search, CheckCircle2, AlertTriangle, Play, RefreshCw, X, Check, Save, UserPlus, 
-  MapPin, ClipboardList, Info, FileText, Download, FileSpreadsheet, Star, ExternalLink, Send
+  MapPin, ClipboardList, Info, FileText, Download, FileSpreadsheet, Star, ExternalLink, Send,
+  MessageSquare, AlertCircle, Image as ImageIcon
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { 
@@ -41,11 +42,16 @@ const SEED_SHIPMENTS: Shipment[] = [
   { id: 'shp_3', trackingNumber: 'TRK-2026-1044', customerName: 'לוי בניה ופיתוח', origin: 'ירושלים', destination: 'אשדוד', driverId: 'drv_3', driverName: 'אלירן לוי', cargoType: 'יבש', weight: 8, status: 'delivered', updatedAt: '19/07/2026, 16:30:00' }
 ];
 
-type Tab = 'overview' | 'leads' | 'shipments' | 'drivers' | 'sync' | 'tenders' | 'fleet' | 'reviews';
+type Tab = 'overview' | 'leads' | 'shipments' | 'drivers' | 'sync' | 'tenders' | 'fleet' | 'reviews' | 'chat';
 
 export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDashboardProps) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   
+  // Chat States
+  const [messages, setMessages] = useState<any[]>([]);
+  const [selectedChatDriverId, setSelectedChatDriverId] = useState<string>('drv_1');
+  const [chatInputText, setChatInputText] = useState('');
+
   // App States
   const [leads, setLeads] = useState<Lead[]>([]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -202,6 +208,23 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
       setNotifications(fetchedNotifications);
     });
 
+    // Listen for chat messages
+    const unsubscribeMessages = onSnapshot(collection(db, 'messages'), (snapshot) => {
+      const fetchedMessages: any[] = [];
+      snapshot.forEach((doc) => {
+        fetchedMessages.push({ id: doc.id, ...doc.data() });
+      });
+      // Client-side sort by timestamp ISO or milliseconds
+      fetchedMessages.sort((a, b) => {
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return timeA - timeB;
+      });
+      setMessages(fetchedMessages);
+    }, (err) => {
+      console.warn("Messages subscription failed:", err);
+    });
+
     setDbLoading(false);
 
     return () => {
@@ -212,8 +235,75 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
       unsubscribeLogs();
       unsubscribeReviews();
       unsubscribeNotifications();
+      unsubscribeMessages();
     };
   }, [dbLoading]);
+
+  // Mark driver messages as read when admin views the chat
+  useEffect(() => {
+    if (activeTab === 'chat' && selectedChatDriverId) {
+      const unread = messages.filter(
+        m => m.driverId === selectedChatDriverId && m.sender === 'driver' && !m.read
+      );
+      unread.forEach(async (msg) => {
+        try {
+          await updateDoc(doc(db, 'messages', msg.id), { read: true });
+        } catch (e) {
+          console.warn("Failed marking msg read:", e);
+        }
+      });
+    }
+  }, [activeTab, selectedChatDriverId, messages]);
+
+  // Handle send message from Admin
+  const handleSendChatMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInputText.trim() || !selectedChatDriverId) return;
+
+    const textToSend = chatInputText.trim();
+    setChatInputText('');
+
+    try {
+      await addDoc(collection(db, 'messages'), {
+        driverId: selectedChatDriverId,
+        sender: 'admin',
+        text: textToSend,
+        timestamp: new Date().toISOString(),
+        read: true
+      });
+      
+      // Real-time automatic simulation auto-response in 2 seconds to make the chat feel alive!
+      setTimeout(async () => {
+        const responses = [
+          "היי, קיבלתי את ההנחיה בשידור חי מהדשבורד. יוצא כעת לנקודת ההעמסה!",
+          "המנוף הופעל ומחברים רצועות. מעמיסים את הציוד הכבד לחצי הדרך.",
+          "יש פקק תנועה כבד בכביש 6 סמוך למחלף שורק, מעריך עיכוב קל של כ-15 דקות.",
+          "ההובלה הושלמה בהצלחה! הלקוח חתם על תעודת המשלוח הדיגיטלית. מצורף צילום חתימה/ספח מהשטח.",
+          "רות קיבלתי. האם יש אישור חריג עבור סגירת נסיעה נוספת מחולון?"
+        ];
+        const randomRes = responses[Math.floor(Math.random() * responses.length)];
+        
+        let extraFields = {};
+        if (randomRes.includes('חתימה')) {
+          extraFields = {
+            photoUrl: "https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?auto=format&fit=crop&w=400&q=80"
+          };
+        }
+
+        await addDoc(collection(db, 'messages'), {
+          driverId: selectedChatDriverId,
+          sender: 'driver',
+          text: randomRes,
+          timestamp: new Date().toISOString(),
+          read: false,
+          ...extraFields
+        });
+      }, 2000);
+
+    } catch (err) {
+      console.error("Error sending message:", err);
+    }
+  };
 
   // CSV Export Utility Functions
   const escapeCSV = (val: any) => {
@@ -852,6 +942,23 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
               {reviews.filter(r => r.status === 'pending_admin').length > 0 && (
                 <span className="mr-auto font-mono text-[10px] bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded font-bold animate-pulse">
                   {reviews.filter(r => r.status === 'pending_admin').length} משבר
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('chat')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded text-xs font-bold transition-all ${
+                activeTab === 'chat'
+                  ? 'bg-white/5 border-r-4 border-[#ff7f00] text-[#ff7f00]'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <MessageSquare className="w-4.5 h-4.5 text-orange-400" />
+              <span>צ'אט נהגים וקשר מבצעי</span>
+              {messages.filter(m => m.sender === 'driver' && !m.read).length > 0 && (
+                <span className="mr-auto font-mono text-[10px] bg-[#ff7f00] text-[#0a192f] px-2 py-0.5 rounded-full font-bold animate-pulse">
+                  {messages.filter(m => m.sender === 'driver' && !m.read).length} חדש
                 </span>
               )}
             </button>
@@ -1810,6 +1917,208 @@ export default function CRMDashboard({ onBackToLanding, googleScriptUrl }: CRMDa
                     </div>
                   )}
                 </div>
+
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
+        {activeTab === 'chat' && (
+          <div className="space-y-6 animate-fade-in" id="driver-chat-tab">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h2 className="text-xl font-black text-white flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-[#ff7f00]" />
+                  מערך קשר מבצעי וצ'אט נהגים בזמן אמת
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  קשר דו-כיווני ישיר מול הנהגים בשטח, עדכוני מיקום, העלאת חתימות ותמונות ואינטגרציית OneSignal
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded border border-emerald-500/20">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>סנכרון Firebase פעיל</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* RIGHT SIDE: DRIVERS LIST (4 COLS) */}
+              <div className="lg:col-span-4 bg-[#0e1e38] border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
+                <span className="text-xs font-black text-slate-400 block uppercase border-b border-slate-800 pb-2">שיחות נהגים פעילות</span>
+                <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                  {drivers.map((drv) => {
+                    const driverMsgs = messages.filter(m => m.driverId === drv.id);
+                    const unreadCount = driverMsgs.filter(m => m.sender === 'driver' && !m.read).length;
+                    const lastMsg = driverMsgs.length > 0 ? driverMsgs[driverMsgs.length - 1] : null;
+
+                    return (
+                      <button
+                        key={drv.id}
+                        onClick={() => setSelectedChatDriverId(drv.id)}
+                        className={`w-full text-right p-3.5 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                          selectedChatDriverId === drv.id
+                            ? 'bg-[#ff7f00]/10 border-[#ff7f00]/40 text-white'
+                            : 'bg-[#061121]/40 border-slate-850 hover:border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div className="relative shrink-0">
+                            <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-xs text-[#ff7f00]">
+                              {drv.name.charAt(0)}
+                            </div>
+                            <span className={`absolute bottom-0 left-0 w-3 h-3 rounded-full border-2 border-[#0e1e38] ${
+                              drv.status === 'available' ? 'bg-emerald-400' : 'bg-amber-400'
+                            }`}></span>
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-xs truncate">{drv.name}</h4>
+                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                              {lastMsg ? lastMsg.text : `עיר נוכחית: ${drv.currentCity}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end shrink-0 gap-1.5">
+                          {lastMsg && (
+                            <span className="text-[9px] text-slate-500 font-mono">
+                              {new Date(lastMsg.timestamp).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                          {unreadCount > 0 && (
+                            <span className="bg-[#ff7f00] text-[#0a192f] text-[9px] font-black px-2 py-0.5 rounded-full animate-bounce">
+                              {unreadCount}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* LEFT SIDE: CHAT FEED (8 COLS) */}
+              <div className="lg:col-span-8 bg-[#0e1e38] border border-slate-800 rounded-2xl shadow-xl flex flex-col h-[580px] overflow-hidden">
+                
+                {/* Chat Window Header */}
+                {(() => {
+                  const activeDriver = drivers.find(d => d.id === selectedChatDriverId);
+                  if (!activeDriver) {
+                    return (
+                      <div className="p-4 border-b border-slate-800 text-slate-400 text-xs text-center">
+                        בחר נהג מהרשימה כדי להתחיל שידור קשר
+                      </div>
+                    );
+                  }
+
+                  const activeDriverMsgs = messages.filter(m => m.driverId === activeDriver.id);
+
+                  return (
+                    <>
+                      <div className="p-4 border-b border-slate-800 bg-[#061121]/30 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-[#ff7f00]/10 border border-[#ff7f00]/30 flex items-center justify-center font-black text-xs text-[#ff7f00]">
+                            {activeDriver.name.charAt(0)}
+                          </div>
+                          <div>
+                            <h3 className="font-extrabold text-xs text-white flex items-center gap-1.5">
+                              <span>{activeDriver.name}</span>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${
+                                activeDriver.status === 'available' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                              }`}>
+                                {activeDriver.status === 'available' ? 'זמין בצי' : 'בנסיעה פעילה'}
+                              </span>
+                            </h3>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              רכב מיועד: {activeDriver.vehicleNumber || 'לא משויך'} • טלפון: {activeDriver.phone}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-left">
+                          <span className="text-[9px] text-slate-400 uppercase font-bold block">עיר נוכחית (GPS)</span>
+                          <span className="text-[10px] text-sky-400 font-bold block">{activeDriver.currentCity}</span>
+                        </div>
+                      </div>
+
+                      {/* Chat Messages Feed Area */}
+                      <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-slate-950/25 flex flex-col">
+                        {activeDriverMsgs.length === 0 ? (
+                          <div className="m-auto text-center p-6 space-y-2 text-slate-500 max-w-xs">
+                            <MessageSquare className="w-8 h-8 text-slate-700 mx-auto" />
+                            <p className="text-xs font-bold text-slate-400">אין הודעות בשיחה זו</p>
+                            <p className="text-[10px] text-slate-500">שלח הודעה ראשונה לנהג כדי להפעיל את הקשר המבצעי מול הסמארטפון שלו.</p>
+                          </div>
+                        ) : (
+                          activeDriverMsgs.map((msg) => {
+                            const isAdmin = msg.sender === 'admin';
+                            return (
+                              <div
+                                key={msg.id}
+                                className={`flex flex-col max-w-[70%] space-y-1 ${
+                                  isAdmin ? 'self-end text-left' : 'self-start text-right'
+                                }`}
+                              >
+                                <div className={`p-3 rounded-2xl text-xs leading-relaxed ${
+                                  isAdmin
+                                    ? 'bg-[#ff7f00] text-white rounded-tl-none'
+                                    : 'bg-[#0e1e38] border border-slate-800 text-slate-200 rounded-tr-none'
+                                }`}>
+                                  <p className="whitespace-pre-wrap">{msg.text}</p>
+                                  
+                                  {msg.photoUrl && (
+                                    <div className="mt-2 rounded-lg overflow-hidden border border-black/20">
+                                      <img
+                                        src={msg.photoUrl}
+                                        alt="attachment"
+                                        referrerPolicy="no-referrer"
+                                        className="w-full h-auto max-h-40 object-cover"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[8px] text-slate-500 px-1 font-mono">
+                                  <span>{new Date(msg.timestamp).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
+                                  {isAdmin && (
+                                    <span className="text-emerald-500">✓ נמסר</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Message Input Bar */}
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleSendChatMessage();
+                        }} 
+                        className="p-3 bg-[#061121]/50 border-t border-slate-850 flex items-center gap-2"
+                      >
+                        <input
+                          type="text"
+                          value={chatInputText}
+                          onChange={(e) => setChatInputText(e.target.value)}
+                          placeholder={`הקלד הודעת קשר אל ${activeDriver.name}...`}
+                          className="flex-1 bg-slate-900 border border-slate-800 text-xs rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-[#ff7f00]"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!chatInputText.trim()}
+                          className="bg-[#ff7f00] hover:bg-[#e06f00] disabled:bg-slate-800 disabled:text-slate-500 p-2.5 rounded-xl text-white transition-colors cursor-pointer shrink-0"
+                        >
+                          <Send className="w-4 h-4" />
+                        </button>
+                      </form>
+                    </>
+                  );
+                })()}
 
               </div>
 

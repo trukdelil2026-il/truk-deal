@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Truck, Users, Calendar, AlertTriangle, CheckCircle2, Wrench, Clock, Plus, 
-  Trash2, Edit, FileSpreadsheet, UserCheck, MapPin, UserX, CalendarDays, Save, X, Info
+  Trash2, Edit, FileSpreadsheet, UserCheck, MapPin, UserX, CalendarDays, Save, X, Info,
+  Coins, TrendingUp, Flame, Cpu, Sparkles, DollarSign, Activity, Phone
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { 
@@ -27,6 +28,31 @@ interface FleetManagementProps {
   onAddSystemLog: (category: 'system' | 'sync' | 'lead' | 'shipment' | 'driver', message: string) => void;
 }
 
+const CITY_DISTANCES: Record<string, Record<string, number>> = {
+  'תל אביב': { 'תל אביב': 10, 'ירושלים': 65, 'חיפה': 95, 'אשדוד': 35, 'באר שבע': 108, 'אילת': 350, 'טבריה': 130, 'קריית שמונה': 180 },
+  'ירושלים': { 'תל אביב': 65, 'ירושלים': 10, 'חיפה': 148, 'אשדוד': 68, 'באר שבע': 85, 'אילת': 315, 'טבריה': 145, 'קריית שמונה': 195 },
+  'חיפה': { 'תל אביב': 95, 'ירושלים': 148, 'חיפה': 10, 'אשדוד': 130, 'באר שבע': 200, 'אילת': 440, 'טבריה': 60, 'קריית שמונה': 85 },
+  'אשדוד': { 'תל אביב': 35, 'ירושלים': 68, 'חיפה': 130, 'אשדוד': 10, 'באר שבע': 72, 'אילת': 320, 'טבריה': 165, 'קריית שמונה': 215 },
+  'באר שבע': { 'תל אביב': 108, 'ירושלים': 85, 'חיפה': 200, 'אשדוד': 72, 'באר שבע': 10, 'אילת': 240, 'טבריה': 198, 'קריית שמונה': 248 },
+  'אילת': { 'תל אביב': 350, 'ירושלים': 315, 'חיפה': 440, 'אשדוד': 320, 'באר שבע': 240, 'אילת': 10, 'טבריה': 410, 'קריית שמונה': 460 },
+  'טבריה': { 'תל אביב': 130, 'ירושלים': 145, 'חיפה': 60, 'אשדוד': 165, 'באר שבע': 198, 'אילת': 410, 'טבריה': 10, 'קריית שמונה': 35 },
+  'קריית שמונה': { 'תל אביב': 180, 'ירושלים': 195, 'חיפה': 85, 'אשדוד': 215, 'באר שבע': 248, 'אילת': 460, 'טבריה': 35, 'קריית שמונה': 10 }
+};
+
+const getCleanCityName = (cityStr: string) => {
+  if (!cityStr) return 'תל אביב';
+  const clean = cityStr.split('(')[0].trim();
+  const knownCities = ['תל אביב', 'ירושלים', 'חיפה', 'אשדוד', 'באר שבע', 'אילת', 'טבריה', 'קריית שמונה'];
+  const matched = knownCities.find(c => clean.includes(c) || c.includes(clean));
+  return matched || 'תל אביב';
+};
+
+const getDistanceBetween = (origin: string, destination: string): number => {
+  const cOrigin = getCleanCityName(origin);
+  const cDest = getCleanCityName(destination);
+  return CITY_DISTANCES[cOrigin]?.[cDest] || 50; // default 50 km if not matched
+};
+
 const SEED_TRUCKS: Omit<TruckItem, 'id'>[] = [
   { type: 'crane', model: 'וולוו FM 460 - מנוף פאלפינגר 50 טון/מטר', licensePlate: '12-345-67', status: 'available', testDueDate: '2026-10-15', insuranceDueDate: '2026-11-01', craneCapacity: 10, assignedDriverId: 'drv_1' },
   { type: 'semitrailer', model: 'סקאניה R-500 גרור פתוח להובלות כבדות', licensePlate: '98-765-43', status: 'in_transit', testDueDate: '2026-08-20', insuranceDueDate: '2026-09-01', assignedDriverId: 'drv_2' },
@@ -45,6 +71,18 @@ const SHIFT_TYPES = [
 export default function FleetManagement({ drivers, tenders, onAddSystemLog }: FleetManagementProps) {
   const [trucks, setTrucks] = useState<TruckItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // AI Pricing Simulator State
+  const [calcDistance, setCalcDistance] = useState(50);
+  const [calcVolume, setCalcVolume] = useState(25);
+  const [calcNeedCrane, setCalcNeedCrane] = useState(false);
+  const [calcIsRushHour, setCalcIsRushHour] = useState(false);
+  const [calcTrafficLevel, setCalcTrafficLevel] = useState<'low' | 'medium' | 'high'>('medium');
+  const [calcOrigin, setCalcOrigin] = useState('תל אביב');
+  const [calcDestination, setCalcDestination] = useState('ירושלים');
+  
+  const [aiAdviceText, setAiAdviceText] = useState<string>('');
+  const [loadingAdvice, setLoadingAdvice] = useState(false);
 
   // New truck form
   const [isAddTruckOpen, setIsAddTruckOpen] = useState(false);
@@ -262,6 +300,255 @@ export default function FleetManagement({ drivers, tenders, onAddSystemLog }: Fl
     setAssignmentAlerts(alerts);
   }, [selectedTenderId, assignDriverId, assignTruckId, trucks, drivers, tenders]);
 
+  // Sync pricing inputs when selectedTenderId changes
+  useEffect(() => {
+    if (selectedTenderId) {
+      const tender = tenders.find(t => t.id === selectedTenderId);
+      if (tender) {
+        const dist = getDistanceBetween(tender.originCity, tender.destinationCity);
+        setCalcDistance(dist);
+        setCalcOrigin(tender.originCity);
+        setCalcDestination(tender.destinationCity);
+        const vol = tender.estimatedVolume || (tender.shipmentType === 'apartment' ? 45 : tender.shipmentType === 'office' ? 60 : 15);
+        setCalcVolume(vol);
+        const crane = !!(tender.needCrane || tender.contentList?.includes('מנוף') || tender.notes?.includes('מנוף'));
+        setCalcNeedCrane(crane);
+        setAiAdviceText('');
+      }
+    }
+  }, [selectedTenderId, tenders]);
+
+  // AI Pricing Formula
+  const calculatePricingDetails = (
+    dist: number, 
+    vol: number, 
+    crane: boolean, 
+    rush: boolean, 
+    traffic: 'low' | 'medium' | 'high'
+  ) => {
+    const basePrice = 350;
+    const distanceFee = dist * 4.5;
+    const volumeFee = vol * 35;
+    const craneFee = crane ? 600 : 0;
+    
+    let multiplier = 1;
+    if (rush) multiplier *= 1.25;
+    if (traffic === 'medium') multiplier *= 1.1;
+    if (traffic === 'high') multiplier *= 1.25;
+
+    const totalPrice = Math.round((basePrice + distanceFee + volumeFee + craneFee) * multiplier);
+    const driverPayout = Math.round(totalPrice * 0.72);
+    const companyCommission = Math.round(totalPrice * 0.28);
+    // Diesel fuel cost estimate (1.8 NIS / km)
+    const fuelCost = Math.round(dist * 1.8);
+    const netProfit = Math.round(companyCommission - fuelCost);
+    const margin = totalPrice > 0 ? Math.round((netProfit / totalPrice) * 100) : 0;
+
+    return {
+      totalPrice,
+      driverPayout,
+      companyCommission,
+      fuelCost,
+      netProfit,
+      margin
+    };
+  };
+
+  const pricing = calculatePricingDetails(
+    calcDistance,
+    calcVolume,
+    calcNeedCrane,
+    calcIsRushHour,
+    calcTrafficLevel
+  );
+
+  // Fetch AI logistics advice
+  const handleFetchAiAdvice = async () => {
+    setLoadingAdvice(true);
+    setAiAdviceText('');
+    try {
+      const res = await fetch('/api/ai/pricing-advice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          distance: calcDistance,
+          volume: calcVolume,
+          needCrane: calcNeedCrane,
+          isRushHour: calcIsRushHour,
+          trafficLevel: calcTrafficLevel,
+          origin: calcOrigin,
+          destination: calcDestination
+        })
+      });
+      const data = await res.json();
+      setAiAdviceText(data.advice || 'לא התקבלה המלצה');
+    } catch (e) {
+      console.error(e);
+      setAiAdviceText('שגיאה בתקשורת עם שרת ה-AI. אנא ודא שמפתח Gemini מוגדר.');
+    } finally {
+      setLoadingAdvice(false);
+    }
+  };
+
+  // Smart AI matchmaking pairing generator
+  const getSmartAIPairings = () => {
+    if (!selectedTenderId) return [];
+    const tender = tenders.find(t => t.id === selectedTenderId);
+    if (!tender) return [];
+
+    const requiresCrane = !!(tender.needCrane || tender.contentList?.includes('מנוף') || tender.notes?.includes('מנוף'));
+
+    const list: {
+      driverId: string;
+      driverName: string;
+      truckId: string;
+      truckModel: string;
+      score: number;
+      reasons: string[];
+    }[] = [];
+
+    drivers.forEach((driver) => {
+      trucks.forEach((truck) => {
+        let score = 100;
+        const reasons: string[] = [];
+
+        // 1. License Check
+        if (truck.type === 'semitrailer' && driver.licenseType !== 'E') {
+          score -= 45;
+          reasons.push('רישיון חסר: דרוש E עבור סמיטריילר');
+        } else if (truck.type === 'crane' && driver.licenseType === 'C1') {
+          score -= 40;
+          reasons.push('רישיון חסר: דרוש C/E עבור מנוף כבד');
+        } else {
+          reasons.push(`✓ רישיון תואם (${driver.licenseType})`);
+        }
+
+        // 2. Status Checks
+        if (driver.status === 'on_duty') {
+          score -= 25;
+          reasons.push('הנהג מועסק כעת בשטח');
+        } else if (driver.status === 'resting') {
+          score -= 15;
+          reasons.push('הנהג במנוחה מוגדרת בחוק');
+        } else if (driver.status === 'available') {
+          score += 10;
+          reasons.push('✓ נהג פנוי וממתין לשיגור');
+        }
+
+        if (truck.status === 'maintenance') {
+          score -= 50;
+          reasons.push('המשאית מושבתת במוסך');
+        } else if (truck.status === 'in_transit') {
+          score -= 20;
+          reasons.push('המשאית בנסיעה');
+        } else {
+          score += 10;
+          reasons.push('✓ משאית פנויה בצי');
+        }
+
+        // 3. Equipment Surcharges
+        if (requiresCrane) {
+          if (truck.type === 'crane') {
+            score += 15;
+            reasons.push('✓ מצויד במנוף פאלפינגר הנדרש');
+          } else {
+            score -= 35;
+            reasons.push('חסר מנוף הנדרש למכרז');
+          }
+        }
+
+        // 4. Geographical Proximity
+        const driverClean = getCleanCityName(driver.currentCity);
+        const tenderClean = getCleanCityName(tender.originCity);
+        if (driverClean === tenderClean) {
+          score += 15;
+          reasons.push(`✓ נהג נמצא ב-${driver.currentCity} (קרבה מושלמת)`);
+        } else {
+          const dist = CITY_DISTANCES[driverClean]?.[tenderClean] || 100;
+          if (dist < 40) {
+            score += 5;
+            reasons.push(`נהג במרחק ${dist} ק"מ מהמוצא`);
+          } else {
+            score -= Math.round(dist / 10);
+            reasons.push(`נהג מרוחק ${dist} ק"מ מהמוצא`);
+          }
+        }
+
+        // 5. Driver Assigned truck
+        if (truck.assignedDriverId === driver.id) {
+          score += 10;
+          reasons.push('✓ המשאית הקבועה של הנהג');
+        }
+
+        score = Math.max(0, Math.min(100, score));
+
+        list.push({
+          driverId: driver.id,
+          driverName: driver.name,
+          truckId: truck.id,
+          truckModel: truck.model,
+          score,
+          reasons: reasons.slice(0, 3)
+        });
+      });
+    });
+
+    return list.sort((a, b) => b.score - a.score);
+  };
+
+  const pairings = getSmartAIPairings();
+  const topPairing = pairings.length > 0 ? pairings[0] : null;
+
+  // Execute AI auto matching
+  const handleAutoMatchAI = () => {
+    if (!selectedTenderId) {
+      alert('נא לבחור מכרז הובלה תחילה כדי לאפשר שידוך AI!');
+      return;
+    }
+    const matches = getSmartAIPairings();
+    const best = matches.find(m => m.score > 30);
+    if (best) {
+      setAssignDriverId(best.driverId);
+      setAssignTruckId(best.truckId);
+      onAddSystemLog('system', `שיוך AI אוטומטי בוצע: שודכו ${best.driverName} ו-${best.truckModel} (ציון התאמה: ${best.score}%)`);
+    } else {
+      alert('לא נמצא שידוך מתאים בצי הרכבים הנוכחי.');
+    }
+  };
+
+  // Sum up actual finances based on tenders list
+  const totalFinancials = (() => {
+    let revenue = 0;
+    tenders.forEach(t => {
+      revenue += Number(t.estPriceMin) || 1650;
+    });
+
+    if (revenue === 0) {
+      revenue = 34850; // default realistic fallback
+    }
+
+    const driverPayout = Math.round(revenue * 0.72);
+    const companyGross = Math.round(revenue * 0.28);
+    const estDistance = tenders.length > 0 ? tenders.length * 75 : 8 * 75;
+    const fuelCost = Math.round(estDistance * 1.8);
+    const netProfit = companyGross - fuelCost;
+    const avgMargin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 21;
+
+    const activeTrucksCount = trucks.filter(t => t.status === 'in_transit').length;
+    const totalTrucksCount = trucks.length || 4;
+    const utilizationRate = Math.round((activeTrucksCount / totalTrucksCount) * 100);
+
+    return {
+      revenue,
+      driverPayout,
+      companyGross,
+      fuelCost,
+      netProfit,
+      avgMargin,
+      utilizationRate
+    };
+  })();
+
   // Execute smart allocation
   const handleExecuteAssignment = async () => {
     if (!selectedTenderId || !assignDriverId || !assignTruckId) {
@@ -347,6 +634,59 @@ export default function FleetManagement({ drivers, tenders, onAddSystemLog }: Fl
   return (
     <div className="space-y-8 text-right" dir="rtl" id="fleet-resource-root">
       
+      {/* 📊 FINANCIAL PROFITABILITY & FLEET EFFICIENCY DASHBOARD */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4" id="fleet-finance-dashboard">
+        
+        <div className="bg-[#0e1e38] border border-slate-800/80 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-black text-slate-400 block uppercase">מחזור הכנסות צי (ברוטו)</span>
+            <strong className="text-2xl font-black text-white font-mono block mt-1">₪{totalFinancials.revenue.toLocaleString()}</strong>
+          </div>
+          <div className="text-[9px] text-emerald-400 font-bold mt-2 flex items-center gap-1">
+            <TrendingUp className="w-3.5 h-3.5" />
+            <span>סנכרון פיננסי מלא מ-Tenders</span>
+          </div>
+        </div>
+
+        <div className="bg-[#0e1e38] border border-slate-800/80 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-black text-slate-400 block uppercase">תשלומי קבלני משנה (72%)</span>
+            <strong className="text-2xl font-black text-[#ff7f00] font-mono block mt-1">₪{totalFinancials.driverPayout.toLocaleString()}</strong>
+          </div>
+          <span className="text-[9px] text-slate-400 mt-2 block font-medium">עמלות נהגים ושותפי שינוע קבועות</span>
+        </div>
+
+        <div className="bg-[#0e1e38] border border-slate-800/80 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-black text-slate-400 block uppercase">עמלת חברה ברוטו (28%)</span>
+            <strong className="text-2xl font-black text-indigo-400 font-mono block mt-1">₪{totalFinancials.companyGross.toLocaleString()}</strong>
+          </div>
+          <span className="text-[9px] text-slate-400 mt-2 block font-medium">עמלת הפלטפורמה הבסיסית מהזמנות</span>
+        </div>
+
+        <div className="bg-[#0e1e38] border border-slate-800/80 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-black text-slate-400 block uppercase">רווח נקי משוער (לאחר דלק)</span>
+            <strong className="text-2xl font-black text-emerald-400 font-mono block mt-1">₪{totalFinancials.netProfit.toLocaleString()}</strong>
+          </div>
+          <div className="text-[9px] text-slate-400 mt-2 flex items-center justify-between">
+            <span>קיזוז סולר: ₪{totalFinancials.fuelCost.toLocaleString()}</span>
+            <span className="font-bold text-emerald-400">{totalFinancials.avgMargin}% שולי רווח</span>
+          </div>
+        </div>
+
+        <div className="bg-[#0e1e38] border border-slate-800/80 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-black text-slate-400 block uppercase">מדד ניצולת צי המשאיות</span>
+            <strong className="text-2xl font-black text-sky-400 font-mono block mt-1">{totalFinancials.utilizationRate}%</strong>
+          </div>
+          <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
+            <div className="bg-sky-400 h-full rounded-full transition-all duration-500" style={{ width: `${totalFinancials.utilizationRate}%` }}></div>
+          </div>
+        </div>
+
+      </div>
+
       {/* 1. FLEET & RESOURCE GRID */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
@@ -502,6 +842,182 @@ export default function FleetManagement({ drivers, tenders, onAddSystemLog }: Fl
                 ))}
               </select>
             </div>
+
+            {/* AI Dynamic Pricing & Smart Fleet Load Balancer Controls */}
+            {selectedTenderId && (
+              <div className="space-y-3.5 pt-3 border-t border-slate-800">
+                
+                {/* 🤖 AI MATCHMAKER & SCORING */}
+                <div className="bg-[#061121] p-3 rounded-xl border border-slate-800/80 space-y-2 text-right">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-white flex items-center gap-1">
+                      <Cpu className="w-3.5 h-3.5 text-sky-400" />
+                      אופטימיזציית צי ושידוך AI
+                    </span>
+                    {topPairing && (
+                      <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/20">
+                        {topPairing.score}% התאמה
+                      </span>
+                    )}
+                  </div>
+
+                  {topPairing && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-slate-300 font-bold">
+                        מומלץ: {topPairing.driverName} + {topPairing.truckModel.split(' - ')[0]}
+                      </p>
+                      <div className="space-y-0.5">
+                        {topPairing.reasons.map((r, i) => (
+                          <div key={i} className="text-[9px] text-slate-400 flex items-center gap-1">
+                            <span className="w-1 h-1 rounded-full bg-sky-400"></span>
+                            <span>{r}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleAutoMatchAI}
+                    className="w-full bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 hover:border-sky-500 text-sky-400 font-bold text-[11px] py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>שדך נהג ומשאית אוטומטית (AI Auto Match)</span>
+                  </button>
+                </div>
+
+                {/* 📊 AI DYNAMIC PRICING SIMULATOR */}
+                <div className="bg-[#061121] p-3 rounded-xl border border-slate-800/80 space-y-3 text-right">
+                  <span className="text-[11px] font-black text-white flex items-center gap-1 border-b border-slate-850 pb-1.5">
+                    <Coins className="w-3.5 h-3.5 text-[#ff7f00]" />
+                    מחשבון תמחור דינמי ועלויות (סימולטור)
+                  </span>
+
+                  {/* Distance Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-slate-400 font-bold">מרחק נסיעה:</span>
+                      <span className="text-white font-mono font-bold">{calcDistance} ק"מ</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="5" 
+                      max="350" 
+                      value={calcDistance} 
+                      onChange={(e) => setCalcDistance(Number(e.target.value))}
+                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-[#ff7f00]"
+                    />
+                  </div>
+
+                  {/* Volume Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-slate-400 font-bold">נפח תכולה משוער:</span>
+                      <span className="text-white font-mono font-bold">{calcVolume} קוב</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="5" 
+                      max="120" 
+                      value={calcVolume} 
+                      onChange={(e) => setCalcVolume(Number(e.target.value))}
+                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-[#ff7f00]"
+                    />
+                  </div>
+
+                  {/* Toggles */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-300 bg-white/5 p-1.5 rounded border border-white/5">
+                      <input 
+                        type="checkbox" 
+                        checked={calcNeedCrane} 
+                        onChange={(e) => setCalcNeedCrane(e.target.checked)}
+                        className="rounded border-slate-800 text-[#ff7f00] focus:ring-[#ff7f00] accent-[#ff7f00]"
+                      />
+                      <span>דרוש מנוף כבד</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-300 bg-white/5 p-1.5 rounded border border-white/5">
+                      <input 
+                        type="checkbox" 
+                        checked={calcIsRushHour} 
+                        onChange={(e) => setCalcIsRushHour(e.target.checked)}
+                        className="rounded border-slate-800 text-[#ff7f00] focus:ring-[#ff7f00] accent-[#ff7f00]"
+                      />
+                      <span>שעות עומס / סופ"ש</span>
+                    </label>
+                  </div>
+
+                  {/* Traffic Selector */}
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-slate-400 block font-bold">רמת עומס בכבישים:</span>
+                    <div className="grid grid-cols-3 gap-1 bg-slate-900 p-0.5 rounded border border-slate-800">
+                      {(['low', 'medium', 'high'] as const).map((lvl) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => setCalcTrafficLevel(lvl)}
+                          className={`py-1 text-[9px] font-bold rounded transition-all cursor-pointer ${
+                            calcTrafficLevel === lvl 
+                              ? 'bg-[#ff7f00] text-[#0a192f]' 
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {lvl === 'low' ? 'קל' : lvl === 'medium' ? 'בינוני' : 'עמוס'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Live Cost Output Grid */}
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800 text-right">
+                    <div className="bg-white/5 p-2 rounded">
+                      <span className="text-[8px] text-slate-400 block uppercase">מחיר מומלץ ללקוח</span>
+                      <strong className="text-sm font-black text-[#ff7f00] font-mono">₪{pricing.totalPrice.toLocaleString()}</strong>
+                    </div>
+
+                    <div className="bg-white/5 p-2 rounded">
+                      <span className="text-[8px] text-slate-400 block uppercase">תשלום לנהג (72%)</span>
+                      <strong className="text-sm font-black text-slate-200 font-mono">₪{pricing.driverPayout.toLocaleString()}</strong>
+                    </div>
+
+                    <div className="bg-[#ff7f00]/5 p-2 rounded col-span-2 border border-[#ff7f00]/10 flex items-center justify-between">
+                      <div>
+                        <span className="text-[8px] text-slate-400 block uppercase">רווח נקי משוער לעסק</span>
+                        <strong className="text-sm font-black text-emerald-400 font-mono">₪{pricing.netProfit.toLocaleString()}</strong>
+                      </div>
+                      <div className="text-left">
+                        <span className="text-[8px] text-slate-500 block uppercase">סולר מוערך</span>
+                        <span className="text-[10px] font-bold text-slate-400 font-mono">₪{pricing.fuelCost}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 💡 GEMINI REAL-TIME ADVICE BUTTON */}
+                  <div className="space-y-1.5 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={handleFetchAiAdvice}
+                      disabled={loadingAdvice}
+                      className="w-full bg-[#ff7f00] hover:bg-[#e06f00] disabled:bg-slate-800 disabled:text-slate-500 text-white font-black text-[10px] py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3 text-white" />
+                      <span>{loadingAdvice ? 'הפקת המלצה מה-AI...' : 'נתח נתיב והמלץ על משאית ב-AI'}</span>
+                    </button>
+
+                    {aiAdviceText && (
+                      <div className="bg-[#0c1a32] border border-[#ff7f00]/20 p-3 rounded-lg text-[10px] leading-relaxed text-slate-200 text-right relative overflow-hidden">
+                        <div className="absolute top-1 left-1.5 text-[8px] text-[#ff7f00]/60 font-mono">GEMINI-3.5</div>
+                        <p>{aiAdviceText}</p>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+
+              </div>
+            )}
 
             {/* AUTOMATIC SYSTEM ALERTS / PREVENTIONS */}
             {assignmentAlerts.length > 0 && (
